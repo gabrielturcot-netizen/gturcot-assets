@@ -54,6 +54,14 @@ D_EVENT      = 2.5     # diamètre des évents
 P_NOYAU      = 2.5     # profondeur du noyau économique (évidement du dos)
 MARGE_NOYAU  = 7.0     # retrait du noyau par rapport au bord de la pièce
 
+# --- Marquage « Le Coin Calme » (en miroir sur le moule => lisible sur la pièce démoulée) ---
+TEXTE               = "Le Coin Calme"
+TAILLE_TEXTE        = 8.0    # taille de police (hauteur des capitales ≈ 0,75 x taille)
+H_TEXTE             = 0.8    # relief des lettres sur le moule = profondeur gravée dans le silicone
+TEXTE_SUR_COUVERCLE = True   # texte au dos de la pièce (couvercles plat et à noyau)
+TEXTE_FACE_GALETS   = False  # texte sur la face galets (moule ouvert) : réserve une bande sans galet
+MARGE_TEXTE         = 2.5    # espace entre le texte et les galets (face galets)
+
 DENSITE_SILICONE = 1.10  # g/cm³ (silicone platine type Dragon Skin / Ecoflex ≈ 1.07–1.12)
 # ============================================================================
 
@@ -108,6 +116,36 @@ def contour_ellipse(a, b, x, y, ang, n=48):
     return np.c_[x + ex * ca - ey * sa, y + ex * sa + ey * ca]
 
 
+def section_texte(miroir=True):
+    """Contours du texte (police DejaVu Sans Bold, fournie avec matplotlib), centrés sur l'origine.
+    miroir=True : texte inversé gauche/droite, tel qu'il doit être sur le moule pour être lisible
+    sur la pièce démoulée (principe du tampon)."""
+    from matplotlib.textpath import TextPath
+    from matplotlib.font_manager import FontProperties
+    tp = TextPath((0, 0), TEXTE, size=TAILLE_TEXTE,
+                  prop=FontProperties(family="DejaVu Sans", weight="bold"))
+    bb = tp.get_extents()
+    cx, cy = (bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2
+    contours = []
+    for poly in tp.to_polygons():
+        p = np.asarray(poly, dtype=np.float64) - [cx, cy]
+        if miroir:
+            p[:, 0] *= -1
+        if len(p) >= 3:
+            contours.append(p)
+    return m.CrossSection(contours, m.FillRule.EvenOdd)
+
+
+def solide_texte(z0, h, miroir=True):
+    return m.Manifold.extrude(section_texte(miroir), h).translate((0, 0, z0))
+
+
+def zone_texte():
+    """Rectangle (xmin, ymin, xmax, ymax) réservé au texte sur la face galets."""
+    b = section_texte().bounds()
+    return (b[0] - MARGE_TEXTE, b[1] - MARGE_TEXTE, b[2] + MARGE_TEXTE, b[3] + MARGE_TEXTE)
+
+
 def centre_dans_ellipse(qx, qy, a, b, x, y, ang):
     """Vrai si le point (qx, qy) est à l'intérieur de l'ellipse (a, b) centrée en (x, y)."""
     dx, dy = qx - x, qy - y
@@ -126,6 +164,7 @@ def generer_nappe():
             a = rng.uniform(amin, amax)
             specs.append((a, a * rng.uniform(rmin, rmax)))
     specs.sort(key=lambda s: -s[0] * s[1])     # les gros d'abord
+    zt = zone_texte() if TEXTE_FACE_GALETS else None
     for a, b in specs:
         ok = False
         for _ in range(20000):
@@ -133,6 +172,8 @@ def generer_nappe():
             ang = rng.uniform(0, math.pi)
             ct = contour_ellipse(a, b, x, y, ang)
             if dans_stade(ct[:, 0], ct[:, 1], L, W).min() < MARGE_BORD:
+                continue
+            if zt and np.any((ct[:, 0] > zt[0]) & (ct[:, 0] < zt[2]) & (ct[:, 1] > zt[1]) & (ct[:, 1] < zt[3])):
                 continue
             renv = a + GAP
             clash = False
@@ -164,7 +205,10 @@ def piece(nappe):
     plaque = prisme_stade(L, W, T_BASE)
     galets = [galet(a, b, hauteur_galet(a, b), x, y, ang).translate((0, 0, T_BASE - EPS))
               for (a, b, x, y, ang) in nappe]
-    return m.Manifold.batch_boolean([plaque] + galets, m.OpType.Add)
+    p = m.Manifold.batch_boolean([plaque] + galets, m.OpType.Add)
+    if TEXTE_FACE_GALETS:   # gravé (lisible) dans la face galets
+        p = p - solide_texte(T_BASE - H_TEXTE, H_TEXTE + 1.0, miroir=False)
+    return p
 
 
 def moule_base(nappe):
@@ -184,6 +228,13 @@ def moule_base(nappe):
         if False else bloc - m.Manifold.batch_boolean([cav_plaque] + cav_galets, m.OpType.Add)
 
 
+def moule_base_marque(nappe):
+    base = moule_base(nappe)
+    if TEXTE_FACE_GALETS:   # lettres en relief sur le plancher, en miroir => gravées et lisibles sur la pièce
+        base = base + solide_texte(T_FOND + H_GALET - EPS, H_TEXTE + EPS, miroir=True)
+    return base
+
+
 def trou(d, x, y, h):
     return m.Manifold.cylinder(h, d / 2.0).translate((x, y, -1.0))
 
@@ -200,6 +251,9 @@ def couvercle(noyau=False):
         Ln, Wn = L - 2 * MARGE_NOYAU, W - 2 * MARGE_NOYAU
         boss = prisme_stade(Ln, Wn, P_NOYAU, z0=T_COUV - EPS, evasement=-0.8)   # flancs en dépouille
         corps = corps + boss
+    if TEXTE_SUR_COUVERCLE:
+        z_face = T_COUV + (P_NOYAU if noyau else 0.0)
+        corps = corps + solide_texte(z_face - EPS, H_TEXTE + EPS, miroir=True)
     htot = T_COUV + H_JUPE + 4
     x_coulee = -(L / 2 - 14.0)
     x_event = (L / 2 - 4.5)
@@ -339,7 +393,7 @@ if __name__ == "__main__":
     nappe = generer_nappe()
     print(f"  {len(nappe)} galets placés, gap mini {GAP} mm, marge bord {MARGE_BORD} mm")
     print("Géométrie et export STL…")
-    man_piece, man_base, man_cp, man_cn = piece(nappe), moule_base(nappe), couvercle(False), couvercle(True)
+    man_piece, man_base, man_cp, man_cn = piece(nappe), moule_base_marque(nappe), couvercle(False), couvercle(True)
     p = exporter(man_piece, "piece_reference.stl")
     base = exporter(man_base, "moule_base.stl")
     cp = exporter(man_cp, "moule_couvercle_plat.stl")
@@ -360,5 +414,6 @@ if __name__ == "__main__":
     rendu_3d(p, "piece_reference.png", "Pièce en silicone attendue (face galets)")
     rendu_3d(base, "moule_base.png", "Moule base – cavité vue du dessus", elev=55, azim=-35)
     rendu_3d(cn, "couvercle_noyau.png", "Couvercle à noyau – face côté silicone (jupe, noyau, coulée, évents)", elev=55, azim=-35)
+    rendu_3d(cp, "couvercle_plat_dessus.png", "Couvercle plat vu du dessus (côté silicone) : texte en miroir sur le moule", elev=20, azim=0)
     coupes(nappe, man_base, man_cn, man_piece)
     print("Terminé.")

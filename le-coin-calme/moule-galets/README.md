@@ -11,8 +11,8 @@ bulle** et **réduire la quantité de silicone** par pièce.
 | Fichier | Rôle | À imprimer ? |
 |---|---|---|
 | `stl/moule_base.stl` | Moule ouvert 1 pièce : cavité de la plaque + empreintes des 39 galets | **Oui** |
-| `stl/moule_couvercle_plat.stl` | Couvercle à jupe auto-centrante, trou de coulée avec entonnoir, 3 évents. Donne un dos parfaitement plat et une épaisseur constante | Optionnel (recommandé) |
-| `stl/moule_couvercle_noyau.stl` | Même couvercle + noyau qui évide le dos de 2,5 mm : ~22 % de silicone en moins que le moule ouvert | Optionnel |
+| `stl/moule_couvercle_plat.stl` | Couvercle à jupe auto-centrante, trou de coulée avec entonnoir, 3 évents, nom « Le Coin Calme » en miroir. Donne un dos plat marqué et une épaisseur constante | Optionnel (recommandé) |
+| `stl/moule_couvercle_noyau.stl` | Même couvercle + noyau qui évide le dos de 2,5 mm (~22 % de silicone en moins que le moule ouvert), nom en miroir sur le noyau | Optionnel |
 | `stl/piece_reference.stl` | La pièce en silicone attendue, pour vérification visuelle | Non |
 | `generer_moule.py` | Générateur paramétrique (toutes les cotes modifiables en tête de fichier) | – |
 | `apercu/*.png` | Plan de la nappe, rendus 3D, coupes du moule assemblé | – |
@@ -110,7 +110,26 @@ Mélanger ~10 % de plus que le volume théorique (pertes dans le gobelet et l'en
 * **Usure du moule** : prévoir 1 moule imprimé pour ~30 à 50 coulées en PLA ; en PETG
   davantage. Garder le fichier pour réimprimer.
 
-## 7. Régénérer les fichiers
+## 7. Marquage « Le Coin Calme »
+
+Le nom est intégré **en miroir sur le moule** (principe du tampon) pour être lisible
+à l'endroit sur la pièce démoulée. Lettres en relief de 0,8 mm sur le moule, donc
+**gravées de 0,8 mm dans le silicone** : aucune bulle possible dans les lettres,
+contrairement à des lettres creusées dans le moule.
+
+| Où | Réglage | Résultat sur la pièce |
+|---|---|---|
+| Couvercle plat et couvercle à noyau (par défaut) | `TEXTE_SUR_COUVERCLE = True` | Nom gravé au centre du dos plat, lisible |
+| Moule ouvert, face galets (option) | `TEXTE_FACE_GALETS = True` | Bande sans galet au centre avec le nom gravé entre les galets (32 galets au lieu de 39) |
+
+Police DejaVu Sans Bold (fournie avec matplotlib), taille `TAILLE_TEXTE = 8` (capitales
+≈ 6 mm, traits ≈ 1,1 mm, compatible buse 0,4 mm). Le texte lui-même se change avec
+`TEXTE`. Aperçu de contrôle : `apercu/couvercle_plat_dessus.png` doit montrer le texte
+**inversé** ; s'il se lit à l'endroit sur le moule, il sera inversé sur la pièce.
+
+![Couvercle avec texte en miroir](apercu/couvercle_plat_dessus.png)
+
+## 8. Régénérer les fichiers
 
 ```bash
 pip install manifold3d trimesh numpy matplotlib
